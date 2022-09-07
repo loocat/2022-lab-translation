@@ -36,12 +36,15 @@ class Bitext():
   def to_dataset(self, split):
     sentence_source = self.load_bitext(split, self.lang_source)
     sentence_target = self.load_bitext(split, self.lang_target)
-    model_inputs = self.tokenizer(sentence_source, max_length=self.max_len_source, truncation=True)
-    with self.tokenizer.as_target_tokenizer():
-      targets = self.tokenizer(sentence_target, max_length=self.max_len_target, truncation=True)
 
-    model_inputs['labels'] = targets['input_ids']
-    return Dataset.from_dict(model_inputs)
+    sources = self.tokenizer.encode_batch(sentence_source)
+    targets = self.tokenizer.encode_batch(sentence_target)
+
+    return Dataset.from_dict({
+      'input_ids': [source.ids[:self.max_len_source] for source in sources],
+      'labels': [target.ids[:self.max_len_target] for target in targets],
+      'attention_mask': [target.attention_mask[:self.max_len_target] for target in targets],
+    })
 
   def to_datasets(self):
     dd = DatasetDict()
