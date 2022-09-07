@@ -119,10 +119,10 @@ def showAttention(tokenizer, input_sentence, output_sentence, attentions):
   # setup axes
   # ax.set_xticklabels([''] + input_sentence.split(' ') + ['<EOS>'], rotation=90)
   # ax.set_yticklabels([''] + output_sentence.split())
-  ax.set_xticklabels([''] + tokenizer.encode(input_sentence).tokens + ['<EOS>'], rotation=90)
+  ax.set_xticklabels([''] + tokenizer.encode(input_sentence).tokens + ['[EOS]'], rotation=90)
   # with tokenizer.as_target_tokenizer():
   #   ax.set_yticklabels([''] + tokenizer.encode(output_sentence).tokens)
-  ax.set_yticklabels([''] + tokenizer.encode(output_sentence).tokens + ['<EOS>'])
+  ax.set_yticklabels([''] + tokenizer.encode(output_sentence).tokens + ['[EOS]'])
 
   # show label at every tick
   ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
