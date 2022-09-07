@@ -1,3 +1,10 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import optim
+
+from tqdm.auto import tqdm
+
 class EncoderRNN(nn.Module):
   def __init__(self, input_size, hidden_size, embed_size=None, num_layers=1):
     super(EncoderRNN, self).__init__()
@@ -143,13 +150,18 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LinearLR
 from torch.utils.tensorboard import SummaryWriter
 
+import random
+from pathlib import Path
+
+MAX_LENGTH=256
+
 class Seq2SeqAtt(nn.Module):
 
-  def __init__(self, eos_token_id, encoder, decoder, max_length=MAX_LENGTH, device=device):
+  def __init__(self, eos_token_id, encoder, decoder, max_length=MAX_LENGTH, device=None):
     super(Seq2SeqAtt, self).__init__()
 
     self.max_length = max_length
-    self.device = device
+    self.device = device if device is not None else 'cpu'
     self.encoder = encoder
     self.decoder = decoder
 
@@ -301,6 +313,8 @@ class Seq2SeqAtt(nn.Module):
   
     return dec_outputs[:di+1], dec_attentions[:di+1, :len(enc_outputs)], loss
 
+from .utils import get_batch, timeSince, showPlot
+
 class Seq2SeqHelper():
 
   def __init__(self, tokenizer, model, optimizer=None, lr=2e-5, name=None, workdir=None):
@@ -428,7 +442,7 @@ class Seq2SeqHelper():
 
     return loss.item() / sum(target_lengths)    
 
-  def train(self, pairs, valid_pairs=None, batch_size=32, criterion=None, n_epochs=3, max_length=MAX_LENGTH, print_every=5, plot_every=10, shuffle=True, resume=None, skip=0, save=True):
+  def train(self, pairs, valid_pairs=None, batch_size=32, criterion=None, n_epochs=3, max_length=MAX_LENGTH, print_every=5, plot_every=10, shuffle=True, resume=None, skip=0, save=True, pad_token='[PAD]'):
 
     epoch = 0
     n_pairs = len(pairs)
@@ -469,7 +483,7 @@ class Seq2SeqHelper():
         plot_loss_total = 0 # reset every plot_every
         epoch_loss_total = 0
 
-        for iter, batch in enumerate(get_batch(pairs, batch_size=batch_size, indices=remain)):
+        for iter, batch in enumerate(get_batch(pairs, pad_id=self.tokenizer.token_to_id(pad_token), batch_size=batch_size, indices=remain)):
 
           loss = self.train_batch(batch, criterion)
           print_loss_total += loss
@@ -484,7 +498,7 @@ class Seq2SeqHelper():
           if (iter+1) % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
-            print(f'{Utils.timeSince(start, progbar.n/n_steps)} S:{progbar.n}/{n_steps} E:{progbar.n/n_pairs:.2}/{n_epochs} L:{print_loss_avg:.6}')
+            print(f'{timeSince(start, progbar.n/n_steps)} S:{progbar.n}/{n_steps} E:{progbar.n/n_pairs:.2}/{n_epochs} L:{print_loss_avg:.6}')
             writer.add_scalar("Loss/train", print_loss_avg, progbar.n)
 
           if (iter+1) % plot_every == 0:
@@ -500,7 +514,7 @@ class Seq2SeqHelper():
           self.save_ckpt(epoch+1, loss)
 
     if len(plot_losses) > 0:
-      Utils.showPlot(plot_losses)
+      showPlot(plot_losses)
 
     return plot_losses
 

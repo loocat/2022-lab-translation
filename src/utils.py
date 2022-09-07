@@ -1,4 +1,6 @@
+import re
 import random
+import unicodedata
 from pathlib import Path
 from datasets import Dataset, DatasetDict
 
@@ -47,11 +49,12 @@ class Bitext():
       dd[split] = self.to_dataset(split)
     return dd
 
+import torch
 
-def pad_seq(seq, max_len, pad_id=0):
+def pad_seq(seq, max_len, pad_id):
   return [seq[i] if i < len(seq) else pad_id for i in range(max_len)]
 
-def get_batch(pairs, batch_size=32, pad_id=0, indices=None, shuffle=True):
+def get_batch(pairs, pad_id, batch_size=32, indices=None, shuffle=True):
   if indices is None:
     indices = list(range(len(pairs)))
     if shuffle:
@@ -67,9 +70,9 @@ def get_batch(pairs, batch_size=32, pad_id=0, indices=None, shuffle=True):
   
     # For input and target sequences, get array of lengths and pad with 0s to max length
     input_lengths = [len(s) for s in input_seqs]
-    input_padded = [pad_seq(s, max(input_lengths)) for s in input_seqs]
+    input_padded = [pad_seq(s, max(input_lengths), pad_id) for s in input_seqs]
     target_lengths = [len(s) for s in target_seqs]
-    target_padded = [pad_seq(s, max(target_lengths)) for s in target_seqs]
+    target_padded = [pad_seq(s, max(target_lengths), pad_id) for s in target_seqs]
 
     # Turn padded arrays into (batch_size x max_len) tensors, transpose into (max_len x batch_size)
     input_tensor = torch.LongTensor(input_padded).transpose(0, 1)
@@ -78,6 +81,7 @@ def get_batch(pairs, batch_size=32, pad_id=0, indices=None, shuffle=True):
     yield input_tensor, input_lengths, target_tensor, target_lengths
 
 
+import time
 from time import gmtime, strftime
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -105,7 +109,7 @@ def showPlot(points):
   ax.yaxis.set_major_locator(loc)
   plt.plot(points)
 
-def showAttention(input_sentence, output_sentence, attentions):
+def showAttention(tokenizer, input_sentence, output_sentence, attentions):
   # setup figure with colorbar
   fig = plt.figure()
   ax = fig.add_subplot(111)
@@ -126,8 +130,8 @@ def showAttention(input_sentence, output_sentence, attentions):
 
   plt.show()
 
-def evaluateAndShowAttention(input_sentence):
-  output_sentence, attentions = s2s_helper.evaluate(input_sentence)
+def evaluateAndShowAttention(model, input_sentence):
+  output_sentence, attentions = model.evaluate(input_sentence)
   print('input=', input_sentence)
   print('output=', output_sentence)
   showAttention(normalize_line(input_sentence), normalize_line(output_sentence), attentions)
