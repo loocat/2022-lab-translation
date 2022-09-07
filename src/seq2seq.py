@@ -482,8 +482,9 @@ class Seq2SeqHelper():
         print_loss_total = 0 # reset every print_every
         plot_loss_total = 0 # reset every plot_every
         epoch_loss_total = 0
+        pad_id = pad_id=self.tokenizer.token_to_id(pad_token)
 
-        for iter, batch in enumerate(get_batch(pairs, pad_id=self.tokenizer.token_to_id(pad_token), batch_size=batch_size, indices=remain)):
+        for iter, batch in enumerate(get_batch(pairs, pad_id=pad_id, batch_size=batch_size, indices=remain)):
 
           loss = self.train_batch(batch, criterion)
           print_loss_total += loss
@@ -499,7 +500,7 @@ class Seq2SeqHelper():
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
             print(f'{timeSince(start, progbar.n/n_steps)} S:{progbar.n}/{n_steps} E:{progbar.n/n_pairs:.2}/{n_epochs} L:{print_loss_avg:.6}')
-            writer.add_scalar("Loss/train", print_loss_avg, progbar.n)
+            writer.add_scalars("Loss", {"train": print_loss_avg}, progbar.n)
 
           if (iter+1) % plot_every == 0:
             plot_loss_avg = plot_loss_total / plot_every
@@ -507,8 +508,10 @@ class Seq2SeqHelper():
             plot_losses.append(plot_loss_avg)
 
         if valid_pairs:
-          valid_loss = [self.validate_batch(batch, criterion) for batch in get_batch(valid_pairs, batch_size=batch_size)]
-          writer.add_scalar('Loss/valid', np.mean(valid_loss), progbar.n)
+          valid_loss = [self.evaluate_batch(batch, criterion) for batch in get_batch(valid_pairs, pad_id=pad_id, batch_size=batch_size)]
+          valid_loss_avg = torch.mean(torch.tensor(valid_loss))
+          writer.add_scalars('Loss', {'valid': valid_loss_avg}, progbar.n)
+          print(f'{timeSince(start, progbar.n/n_steps)} S:{progbar.n}/{n_steps} E:{progbar.n/n_pairs:.2}/{n_epochs} L:{valid_loss_avg:.6} --VALIDATION--')
 
         if save:
           self.save_ckpt(epoch+1, loss)
