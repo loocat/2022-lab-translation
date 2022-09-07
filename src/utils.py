@@ -134,4 +134,4 @@ def evaluateAndShowAttention(model, input_sentence):
   output_sentence, attentions = model.evaluate(input_sentence)
   print('input=', input_sentence)
   print('output=', output_sentence)
-  showAttention(normalize_line(input_sentence), normalize_line(output_sentence), attentions)
+  showAttention(model.tokenizer, normalize_line(input_sentence), normalize_line(output_sentence), attentions)
