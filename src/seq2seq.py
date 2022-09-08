@@ -225,7 +225,7 @@ class Seq2SeqAtt(nn.Module):
       dec_input_next = torch.zeros(batch_size, dtype=torch.long)
 
       for bi in range(len(dec_input)):
-        if target_exists and (di < n_targets[bi]) and (dec_input[bi] > 0): # pad_id === 0
+        if target_exists and (di < n_targets[bi]):
           # print('bi:', bi)
           # print('   ', dec_output[bi])
           # print('   ', targets_batch[di, bi])
