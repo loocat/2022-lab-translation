@@ -153,6 +153,8 @@ from torch.utils.tensorboard import SummaryWriter
 import random
 from pathlib import Path
 
+from .masked_cross_entropy import masked_cross_entropy
+
 MAX_LENGTH=256
 
 class Seq2SeqAtt(nn.Module):
@@ -202,16 +204,21 @@ class Seq2SeqAtt(nn.Module):
     # run decoder and collect outputs
     dec_outputs = torch.zeros(batch_size, max_length, device=device)
     dec_attentions = torch.zeros(max_length, batch_size, max_length, device=device)
+    dec_preds = None #torch.zeros(batch_size, max_length, )
 
     dec_input = torch.tensor([self.eos_token_id] * batch_size, device=device)
     dec_hidden = enc_hidden
     dec_context = torch.zeros(1, batch_size, encoder.hidden_size, device=device)
 
-    loss, cnt = 0, 0
     for di in range(max(n_targets) if target_exists else max_length):
       dec_output, dec_hidden, dec_context, attn_weights = decoder(
         dec_input, dec_hidden, dec_context, enc_output
       )
+
+      if target_exists:
+        if dec_preds is None:
+          dec_preds = torch.zeros(batch_size, max_length, dec_output.size(-1), device=device)
+        dec_preds[:, di] = dec_output.clone()
 
       # print(f'di === {di}, dec_input === {dec_input}')
       # for k in ['dec_input', 'dec_output', 'dec_context', 'attn_weights','dec_attentions']:
@@ -225,15 +232,6 @@ class Seq2SeqAtt(nn.Module):
       dec_input_next = torch.zeros(batch_size, dtype=torch.long)
 
       for bi in range(len(dec_input)):
-        if target_exists and (di < n_targets[bi]):
-          # print('bi:', bi)
-          # print('   ', dec_output[bi])
-          # print('   ', targets_batch[di, bi])
-          loss += criterion(dec_output[bi], targets_batch[di, bi])
-          cnt += 1
-          # print('    loss =', loss)
-          # print('     cnt =', cnt)
-
         topv, topi = dec_output[bi].data.topk(1)
         dec_outputs[bi, di] = topi.item()
 
@@ -249,13 +247,14 @@ class Seq2SeqAtt(nn.Module):
 
       # if dec_input == self.eos_token_id:
       #   break
+
+    loss = masked_cross_entropy(dec_preds, targets_batch.transpose(0,1), target_lengths) if target_exists else None
   
     return (
       dec_outputs[:, :di+1],
       dec_attentions[:di+1, :, :len(enc_output)].transpose(0, 1),
       loss #(loss/cnt if cnt > 0 else None)
     )
-
 
   def process_(self, inputs, targets=None, max_length=MAX_LENGTH, teacher_forcing_rate=0.5, criterion=None):
     device = self.device
@@ -423,7 +422,7 @@ class Seq2SeqHelper():
     loss.backward()
     self.optimizer.step()
 
-    return loss.item() / sum(target_lengths)
+    return loss.item() #/ sum(target_lengths)
 
   def evaluate_batch(self, batch, criterion, max_length=MAX_LENGTH):
 
@@ -440,7 +439,7 @@ class Seq2SeqHelper():
         max_length=max_length
       )
 
-    return loss.item() / sum(target_lengths)    
+    return loss.item() #/ sum(target_lengths)    
 
   def train(self, pairs, valid_pairs=None, batch_size=32, criterion=None, n_epochs=3, max_length=MAX_LENGTH, print_every=5, plot_every=10, shuffle=True, resume=None, skip=0, save=True, pad_token='[PAD]'):
 
