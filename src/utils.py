@@ -14,24 +14,22 @@ def normalize_line(s):
   s = unicodeToAscii(s.lower().strip())
   s = re.sub(r'([!?.])', r' \1', s)
   s = s.replace('"', '').replace('``', '')
-  if s[-1] != '.':
+  if len(s) > 0 and s[-1] != '.':
     s += '.'
   return s
 
 class Bitext():
-  def __init__(self, tokenizer, bitext_dir, lang_source, lang_target, max_len_source, max_len_target, bitext_prefix=None):
+  def __init__(self, tokenizer, bitext_dir, lang_source, lang_target, bitext_prefix=None):
     self.tokenizer = tokenizer
     self.bitext_dir = bitext_dir
     self.lang_source = lang_source
     self.lang_target = lang_target
-    self.max_len_source = max_len_source
-    self.max_len_target = max_len_target
     self.bitext_prefix = 'bitext' if bitext_prefix is None else bitext_prefix
 
   def load_bitext(self, split, language):
     file = self.bitext_dir/f'{self.bitext_prefix}.{split}.{language}'
     lines = file.read_text().strip().split('\n')
-    return [normalize_line(line) for line in lines if len(line) > 0]
+    return lines
 
   def to_dataset(self, split):
     sentence_source = self.load_bitext(split, self.lang_source)
@@ -41,9 +39,9 @@ class Bitext():
     targets = self.tokenizer.encode_batch(sentence_target)
 
     return Dataset.from_dict({
-      'input_ids': [source.ids[:self.max_len_source] for source in sources],
-      'labels': [target.ids[:self.max_len_target] for target in targets],
-      'attention_mask': [target.attention_mask[:self.max_len_target] for target in targets],
+      'input_ids': [source.ids for source in sources],
+      'labels': [target.ids for target in targets],
+      'attention_mask': [target.attention_mask for target in targets],
     })
 
   def to_datasets(self):
@@ -120,11 +118,7 @@ def showAttention(tokenizer, input_sentence, output_sentence, attentions):
   fig.colorbar(cax)
 
   # setup axes
-  # ax.set_xticklabels([''] + input_sentence.split(' ') + ['<EOS>'], rotation=90)
-  # ax.set_yticklabels([''] + output_sentence.split())
   ax.set_xticklabels([''] + tokenizer.encode(input_sentence).tokens + ['[EOS]'], rotation=90)
-  # with tokenizer.as_target_tokenizer():
-  #   ax.set_yticklabels([''] + tokenizer.encode(output_sentence).tokens)
   ax.set_yticklabels([''] + tokenizer.encode(output_sentence).tokens + ['[EOS]'])
 
   # show label at every tick

@@ -229,7 +229,7 @@ class Seq2SeqAtt(nn.Module):
           # print('bi:', bi)
           # print('   ', dec_output[bi])
           # print('   ', targets_batch[di, bi])
-          loss += criterion(dec_output[bi], targets_batch[di, bi].clone())
+          loss += criterion(dec_output[bi], targets_batch[di, bi])
           cnt += 1
           # print('    loss =', loss)
           # print('     cnt =', cnt)
@@ -238,7 +238,7 @@ class Seq2SeqAtt(nn.Module):
         dec_outputs[bi, di] = topi.item()
 
         if target_exists and (di < n_targets[bi]) and (random.random() < teacher_forcing_rate):
-          dec_input_next[bi] = targets_batch[di, bi].clone()
+          dec_input_next[bi] = targets_batch[di, bi]
         else:
           # print('             ', topi)
           # print('             ', topi.item())
@@ -508,7 +508,11 @@ class Seq2SeqHelper():
             plot_losses.append(plot_loss_avg)
 
         if valid_pairs:
-          valid_loss = [self.evaluate_batch(batch, criterion) for batch in get_batch(valid_pairs, pad_id=pad_id, batch_size=batch_size)]
+          valid_loss = []
+          valid_progbar = tqdm(range(len(valid_pairs)))
+          for batch in get_batch(valid_pairs, pad_id=pad_id, batch_size=batch_size):
+            valid_loss.append(self.evaluate_batch(batch, criterion))
+            valid_progbar.update(len(batch[-1]))
           valid_loss_avg = torch.mean(torch.tensor(valid_loss))
           writer.add_scalars('Loss', {'valid': valid_loss_avg}, progbar.n)
           print(f'{timeSince(start, progbar.n/n_steps)} S:{progbar.n}/{n_steps} E:{progbar.n/n_pairs:.2}/{n_epochs} L:{valid_loss_avg:.6} --VALIDATION--')
