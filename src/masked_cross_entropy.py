@@ -8,7 +8,7 @@ def sequence_mask(sequence_length, max_len=None):
   batch_size = sequence_length.size(0)
   seq_range = torch.arange(max_len, dtype=torch.long, device=device)
   seq_range_expand = seq_range.unsqueeze(0).expand(batch_size, max_len)
-  seq_range_expand = torch.tensor(seq_range_expand, device=device)
+  seq_range_expand = seq_range_expand.clone().detach()
   seq_length_expand = (sequence_length.unsqueeze(1).expand_as(seq_range_expand))
   return (seq_range_expand < seq_length_expand)
 

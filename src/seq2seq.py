@@ -6,7 +6,7 @@ from torch import optim
 from tqdm.auto import tqdm
 
 class EncoderRNN(nn.Module):
-  def __init__(self, input_size, hidden_size, embed_size=None, num_layers=1):
+  def __init__(self, input_size, hidden_size, embed_size=None, num_layers=1, dropout_p=0.1):
     super(EncoderRNN, self).__init__()
 
     if embed_size is None:
@@ -16,12 +16,12 @@ class EncoderRNN(nn.Module):
     self.hidden_size = hidden_size
     self.num_layers = num_layers
     self.embedding = nn.Embedding(input_size, embed_size, padding_idx=0)
-    self.gru = nn.GRU(embed_size, hidden_size, num_layers)
+    self.gru = nn.GRU(embed_size, hidden_size, num_layers, dropout=dropout_p)
 
   def forward(self, input, input_lengths, hidden=None):
     batch_size = len(input_lengths)
     embedded = self.embedding(input).view(-1, batch_size, self.hidden_size)
-    packed = torch.nn.utils.rnn.pack_padded_sequence(embedded, input_lengths)#.to(input.device)
+    packed = torch.nn.utils.rnn.pack_padded_sequence(embedded, input_lengths)
     output, hidden = self.gru(packed, hidden if hidden is not None else self.initHidden(batch_size).to(input.device))
     output, _ = torch.nn.utils.rnn.pad_packed_sequence(output) # unpack (back to padded)
     return output, hidden
@@ -116,11 +116,11 @@ class AttentionDecoderRNN(nn.Module):
     # for k in ['input', 'last_hidden', 'last_context', 'enc_outputs']:
     #   print(k, locals()[k].device)
 
-    batch_size = input.size(0) #enc_outputs.size(1)
+    batch_size = input.size(0)
     embedded = self.embedding(input).view(-1, batch_size, self.embed_size)
 
     rnn_input = torch.cat((embedded, last_context), 2)
-    rnn_output, hidden = self.gru(rnn_input, last_hidden) # 1,B,H
+    rnn_output, hidden = self.gru(rnn_input, last_hidden)
 
     # for k in ['rnn_output', 'enc_outputs']:
     #   print(k, locals()[k].size())
@@ -130,14 +130,14 @@ class AttentionDecoderRNN(nn.Module):
     # for k in ['attn_weights', 'enc_outputs']:
     #   print(k, locals()[k].device)
 
-    context = torch.bmm(attn_weights.transpose(0,1), enc_outputs.transpose(0,1)).transpose(0,1) # B,1,H
+    context = torch.bmm(attn_weights.transpose(0,1), enc_outputs.transpose(0,1)).transpose(0,1)
 
     # for k in ['attn_weights', 'context']:
     #   print(k, locals()[k].size())
 
-    rnn_output = rnn_output.squeeze(0) # B,H
-    context = context.squeeze(0) # B,H
-    output = F.log_softmax(self.out(torch.cat((rnn_output, context), 1)), dim=1) # B,OUT
+    rnn_output = rnn_output.squeeze(0)
+    context = context.squeeze(0)
+    output = F.log_softmax(self.out(torch.cat((rnn_output, context), 1)), dim=1)
 
     # for k in ['output']:
     #   print(k, locals()[k].size())
@@ -204,7 +204,7 @@ class Seq2SeqAtt(nn.Module):
     # run decoder and collect outputs
     dec_outputs = torch.zeros(batch_size, max_length, device=device)
     dec_attentions = torch.zeros(max_length, batch_size, max_length, device=device)
-    dec_preds = None #torch.zeros(batch_size, max_length, )
+    dec_preds = None
 
     dec_input = torch.tensor([self.eos_token_id] * batch_size, device=device)
     dec_hidden = enc_hidden
@@ -226,7 +226,6 @@ class Seq2SeqAtt(nn.Module):
   
       if attn_weights is not None:
         aw_length = min(attn_weights.size(-1), max_length)
-        # print(attn_weights.data[0, :, :aw_length])
         dec_attentions[di, :, :aw_length] += attn_weights.data[0, :, :aw_length]
 
       dec_input_next = torch.zeros(batch_size, dtype=torch.long)
@@ -238,79 +237,15 @@ class Seq2SeqAtt(nn.Module):
         if target_exists and (di < n_targets[bi]) and (random.random() < teacher_forcing_rate):
           dec_input_next[bi] = targets_batch[di, bi]
         else:
-          # print('             ', topi)
-          # print('             ', topi.item())
-          # print('             ', topi.squeeze().detach())
           dec_input_next[bi] = topi.squeeze().detach()
 
       dec_input = dec_input_next.to(device)
 
-      # if dec_input == self.eos_token_id:
-      #   break
-
-    loss = masked_cross_entropy(dec_preds, targets_batch.transpose(0,1), target_lengths) if target_exists else None
-  
     return (
       dec_outputs[:, :di+1],
       dec_attentions[:di+1, :, :len(enc_output)].transpose(0, 1),
-      loss #(loss/cnt if cnt > 0 else None)
+      masked_cross_entropy(dec_preds, targets_batch.transpose(0,1), target_lengths) if target_exists else None
     )
-
-  def process_(self, inputs, targets=None, max_length=MAX_LENGTH, teacher_forcing_rate=0.5, criterion=None):
-    device = self.device
-    encoder = self.encoder.to(device)
-    decoder = self.decoder.to(device)
-
-    max_length = min(max_length, self.max_length)
-
-    inputs = inputs.to(device)
-    if targets is None:
-      n_targets = 0
-    else:
-      targets = targets.to(device)
-      n_targets = min(targets.size(0), max_length)
-
-    # run through encoder
-    enc_hidden = encoder.initHidden().to(device)
-    enc_outputs, enc_hidden = encoder(inputs, enc_hidden)
-
-    # run decoder and collect outputs
-    dec_outputs = torch.zeros(max_length, device=device)
-    dec_attentions = torch.zeros(max_length, max_length, device=device)
-
-    dec_input = torch.tensor([[self.eos_token_id]], dtype=torch.long, device=device)
-    dec_hidden = enc_hidden
-    dec_context = torch.zeros(1, encoder.hidden_size, device=device)
-
-    loss = 0
-    for di in range(max_length):
-      dec_output, dec_hidden, dec_context, dec_attention = decoder(
-        dec_input, dec_hidden, dec_context, enc_outputs
-      )
-
-      # for k in ['dec_context', 'dec_attention']:
-      #   print(k, locals()[k].size())
-      # print('dec_attention.data', dec_attention.data.size())
-
-      if dec_attention is not None:
-        aw_length = min(dec_attention.size(2), max_length)
-        dec_attentions[di, :aw_length] += dec_attention.data[0][0][:aw_length]
-
-      if di < n_targets:
-        loss += criterion(dec_output, targets[di])
-
-      topv, topi = dec_output.data.topk(1)
-      dec_outputs[di] = topi.item()
-
-      if (di < n_targets) and (random.random() < teacher_forcing_rate):
-        dec_input = targets[di]
-      else:
-        dec_input = topi.squeeze().detach()
-
-      if dec_input == self.eos_token_id:
-        break
-  
-    return dec_outputs[:di+1], dec_attentions[:di+1, :len(enc_outputs)], loss
 
 from .utils import get_batch, timeSince, showPlot
 
